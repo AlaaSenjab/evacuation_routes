@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no">
+    <meta charset="utf-8">
+    <title>Evacuation Route Optimizer</title>
+    <style>
+      /* Always set the map height explicitly to define the size of the div
+       * element that contains the map. */
+      #map {
+        height: 100%;
+      }
+      /* Optional: Makes the sample page fill the window. */
+      html, body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+      }
+      #floating-panel {
+        position: absolute;
+        top: 10px;
+        left: 25%;
+        z-index: 5;
+        background-color: #fff;
+        padding: 10px;
+        border: 1px solid #999;
+        text-align: center;
+        font-family: 'Roboto','sans-serif';
+        line-height: 20px;
+        padding-left: 10px;
+      }
+      #right-panel {
+        font-family: 'Roboto','sans-serif';
+        line-height: 20px;
+        padding-right: 0px;
+        font-size: 10px;
+
+      }
+
+      #right-panel select, #right-panel input {
+        font-size: 6px;
+      }
+
+      #right-panel select {
+        width: 60%;
+      }
+
+      #right-panel i {
+        font-size: 8px;
+      }
+      #right-panel {
+        height: 100%;
+        float: right;
+        width: 200px;
+        overflow: auto;
+      }
+      #map {
+        margin-right: 200px;
+      }
+      #floating-panel {
+        background: #fff;
+        padding: 10px;
+        font-size: 14px;
+        font-family: Arial;
+        border: 1px solid #ccc;
+        box-shadow: 0 2px 2px rgba(33, 33, 33, 0.4);
+        display: none;
+
+      }
+      @media print {
+        #map {
+          height: 500px;
+          margin: 0;
+        }
+        #right-panel {
+          float: none;
+          width: auto;
+        }
+      }
+      .switch {
+        position: relative;
+        display:  inline-grid;
+        width: 30px;
+        height: 17px;
+        margin-top: 0px;
+        margin-right: 20px;
+        bottom: 9px;
+
+
+
+
+      }
+
+      .switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+
+      .slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: #ccc;
+        -webkit-transition: .4s;
+        transition: .4s;
+      }
+
+      .slider:before {
+        position: absolute;
+        content: "";
+        height: 13px;
+        width: 13px;
+        left: 2px;
+        bottom: 2px;
+        background-color: white;
+        -webkit-transition: .4s;
+        transition: .4s;
+      }
+
+      input:checked + .slider {
+        background-color: #2196F3;
+      }
+
+      input:focus + .slider {
+        box-shadow: 0 0 1px #2196F3;
+      }
+
+      input:checked + .slider:before {
+        -webkit-transform: translateX(13px);
+        -ms-transform: translateX(13px);
+        transform: translateX(13px);
+      }
+
+      /* Rounded sliders */
+      .slider.round {
+        border-radius: 17px;
+      }
+
+      .slider.round:before {
+        border-radius: 50%;
+      }
+    </style>
+  </head>
+  <body>
+
+    <div id="floating-panel">
+      <strong>Start:</strong>
+      <input type="text" id="start" placeholder="Start Location">
+
+      <strong>End:</strong>
+      <input type="text" id="end" placeholder="End Location">
+      <button id="search">Search</button>
+      <div>
+        <span>Toggel Active Fires</span>
+      <label id = "fire" class="switch">
+        <input type="checkbox">
+        <span class="slider round"></span>
+      </label>
+      <span>Toggel Road Closures</span>
+      <label id = "shelter" class="switch">
+
+        <input type="checkbox">
+        <span class="slider round" > </span>
+
+      </label>
+    </div>
+    </div>
+    <div id="right-panel"></div>
+    <div id="map"></div>
+    <script>
+      function initMap() {
+        var directionsRenderer = new google.maps.DirectionsRenderer();
+        var directionsService = new google.maps.DirectionsService();
+
+        var map = new google.maps.Map(document.getElementById('map'), {
+            zoom: 10,
+            center: {lat: 38.694862, lng: -122.772130}
+
+        });
+
+        directionsRenderer.setMap(map);
+        directionsRenderer.setPanel(document.getElementById('right-panel'));
+
+        var control = document.getElementById('floating-panel');
+        control.style.display = 'block';
+        map.controls[google.maps.ControlPosition.TOP_CENTER].push(control);
+
+        var onChangeHandler = function() {
+          calculateAndDisplayRoute(directionsService, directionsRenderer);
+        };
+
+        var src = 'https://storage.googleapis.com/live_fire_data/testing/2f43f0479c8fb6e28bda361d42f8cd42_en.kmz?cm.ttl=210';
+        var kmlLayer = new google.maps.KmlLayer(src, {
+          suppressInfoWindows: true,
+          preserveViewport: false,
+          map: map
+        });
+
+        document.getElementById('search').addEventListener('click', onChangeHandler);
+
+        var trafficLayer = new google.maps.TrafficLayer();
+        trafficLayer.setMap(map);
+
+        //gets markers from app.py
+        var markers = JSON.parse('{{ markers |safe}}');
+        //func add markers
+        for(var i = 0;i < markers.length;i++){
+          // Add marker
+          addMarker(markers[i]);
+        }
+
+
+
+        var fire_map_loc = JSON.parse('{{ fire_map_loc |safe}}');
+        function plot_fire(ar){
+          if (ar == 'add'){
+            for(var i = 0;i < fire_map_loc.length;i++){
+              // Add marker
+              addFire(fire_map_loc[i]);
+
+            }
+          } else {
+            for(var i = 0;i < fire_map_loc.length;i++){
+              // Add marker
+              clearMarkersFire();
+
+            }
+          }
+        }
+        var fires_list = [];
+        function addFire(props){
+          var fire = new google.maps.Marker({
+            position:props.coords,
+            map:map,
+          });
+          var scaled = {url:props.iconImage, scaledSize: new google.maps.Size(22, 22)};
+          if(props.iconImage){
+            // Set icon image
+            fire.setIcon(scaled);
+          }
+          fires_list.push(fire);
+        }
+        function setMapOnFire(map) {
+        for (var i = 0; i < fires_list.length; i++) {
+          fires_list[i].setMap(map);
+        }
+      }
+            function clearMarkersFire() {
+              setMapOnFire(null);
+            }
+          function deleteMarkersFire() {
+            clearMarkersFire();
+            roads_list = [];
+          }
+
+
+
+        //gets the closed roads geo loc from app.py
+        var road_geo = JSON.parse('{{ road_geo |safe}}');
+        function plot_road(ar){
+          if (ar == 'add'){
+            for(var i = 0;i < road_geo.length;i++){
+              // Add marker
+              addRoad(road_geo[i]);
+
+            }
+          } else {
+            for(var i = 0;i < road_geo.length;i++){
+              // Add marker
+              clearMarkers();
+
+            }
+          }
+
+        }
+        var roads_list = [];
+        function addRoad(props){
+          var road = new google.maps.Marker({
+            position:props.coords,
+            map:map,
+          });
+          var scaled = {url:props.iconImage, scaledSize: new google.maps.Size(22, 22)};
+          if(props.iconImage){
+            // Set icon image
+            road.setIcon(scaled);
+          }
+          roads_list.push(road);
+        }
+        function setMapOnAll(map) {
+        for (var i = 0; i < roads_list.length; i++) {
+          roads_list[i].setMap(map);
+        }
+      }
+            function clearMarkers() {
+              setMapOnAll(null);
+            }
+          function deleteMarkers() {
+            clearMarkers();
+            roads_list = [];
+          }
+
+        var checke = true;
+        document.getElementById("shelter").addEventListener("change", function(){
+          console.log(checke);
+          if (checke == true){
+            checke = false;
+            console.log('done')
+            plot_road('add')
+          } else {
+            checke = true;
+            console.log('done0')
+            plot_road('rm')
+          }
+        });
+        var chec = true;
+        document.getElementById("fire").addEventListener("change", function(){
+          console.log(chec);
+          if (chec == true){
+            chec = false;
+            console.log('done')
+            plot_fire('add')
+          } else {
+            chec = true;
+            console.log('done0')
+            plot_fire('rm')
+          }
+        });
+
+
+        // Add Marker Function
+        function addMarker(props){
+          var marker = new google.maps.Marker({
+            position:props.coords,
+            map:map,
+          });
+          //scales the icons size down
+          var scaled = {url:props.iconImage, scaledSize: new google.maps.Size(22, 22)};
+          // Check for customicon
+          if(props.iconImage){
+            // Set icon image
+            marker.setIcon(scaled);
+          }
+
+          // Check content
+          if(props.content){
+            var infoWindow = new google.maps.InfoWindow({
+              content:props.content
+            });
+          console.log(props.coords)
+            marker.addListener('click', function(){
+
+              infoWindow.open(map, marker);
+              document.getElementById('end').value = props.content.split('<h3>').pop().split('</h3>')[0]
+            });
+            map.addListener('click', function(){
+              infoWindow.close(map, marker);
+              document.getElementById('end').value = props.content.split('<h3>').pop().split('</h3>')[0]
+            });
+          }
+        }
+
+      }
+
+
+
+
+
+
+
+      function calculateAndDisplayRoute(directionsService, directionsRenderer) {
+        var start = document.getElementById('start').value;
+
+        var end = document.getElementById('end').value;
+        directionsService.route({
+          origin: start,
+          destination: end,
+          travelMode: 'DRIVING',
+          unitSystem: google.maps.UnitSystem.IMPERIAL,
+          avoidTolls: false,
+          drivingOptions: {
+              departureTime: new Date(Date.now() + 2),
+              trafficModel: 'bestguess'
+          },
+          provideRouteAlternatives: true
+        }, function(response, status) {
+          if (status === 'OK') {
+            directionsRenderer.setDirections(response);
+            console.log(response)
+
+        }
+        });
+      }
+
+
+
+    </script>
+    <script async defer
+    src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY&libraries=places&callback=initMap">
+    </script>
+  </body>
+</html>
